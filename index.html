@@ -1,0 +1,499 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Absensi Sholat — Dzuhur & Ashar (X TKJ 3 Industri)</title>
+
+<!-- QR generation -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js" integrity="sha512-1bNq/5gP7v7p5qf3g2+6sFq9+3DJqYb4V6+zI3nY6uF2+z0n7bQw2sF9mE9G9Q7nYdu6uZs3lQ2G3x3H1sY2w==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<!-- QR scanner -->
+<script src="https://unpkg.com/html5-qrcode@2.3.8/minified/html5-qrcode.min.js"></script>
+
+<style>
+  :root{
+    --bg:#f5fbf7;
+    --card:#ffffff;
+    --accent:#15803d;       /* hijau */
+    --accent-2:#b45309;     /* emas/cokelat */
+    --muted:#6b7280;
+    --accent-weak: #d1fae5;
+  }
+  body{
+    font-family: Inter, system-ui, Arial;
+    margin: 0;
+    padding: 18px;
+    background: linear-gradient(180deg,#f0fff6 0%, #f8fdf9 100%);
+    color: #062017;
+  }
+  header { text-align:center; margin-bottom:10px; }
+  h1 { margin: 6px 0; font-size: 20px; color:var(--accent); }
+  .topbar { display:flex; gap:8px; justify-content:space-between; align-items:center; margin-bottom:12px; flex-wrap:wrap; }
+  .card {
+    background: var(--card);
+    border-radius: 12px;
+    padding: 14px;
+    box-shadow: 0 6px 20px rgba(2,6,23,0.04);
+    margin-bottom: 12px;
+  }
+  .controls { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  input, select, button { padding:8px 10px; border-radius:8px; border:1px solid #e6eef9; font-size:14px; }
+  button { background:var(--accent); color:white; border:none; cursor:pointer; }
+  button.ghost { background:transparent; color:var(--accent); border:1px solid var(--accent); }
+  button.warn { background:#ef4444; }
+  .layout {
+    display:grid;
+    grid-template-columns: 1fr 420px;
+    gap:12px;
+  }
+  @media(max-width:900px){ .layout{ grid-template-columns: 1fr; } }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th, td { padding:8px; border-bottom:1px solid #f1f5f9; text-align:left; vertical-align:middle; }
+  th { background:linear-gradient(90deg, rgba(21,128,61,0.06), rgba(180,83,9,0.03)); color:#07321f; position:sticky; top:0; z-index:2; }
+  .small { font-size:12px; color:var(--muted); }
+  .qr-btn { padding:6px 8px; font-size:13px; border-radius:8px; }
+  .status-present { color:green; font-weight:600; }
+  .status-absent { color:#9ca3af; }
+  .tools { display:flex; gap:8px; justify-content:flex-start; flex-wrap:wrap; margin-top:8px; }
+  .scanner-area { display:flex; gap:8px; align-items:flex-start; flex-wrap:wrap; }
+  #reader { width:360px; max-width:100%; border-radius:8px; overflow:hidden; background:var(--accent-weak); padding:8px; }
+  .note { font-size:12px; color:var(--muted); text-align:center; margin-top:6px; }
+  .rekap-list { max-height:260px; overflow:auto; padding:6px; border-radius:6px; background:#fbfff9; }
+  .badge { background:var(--accent-2); color:white; padding:6px 8px; border-radius:999px; font-weight:600; }
+  .muted-ghost { background:transparent; border:1px dashed #e6f9ef; padding:8px; border-radius:8px; }
+  .date-input { display:flex; gap:8px; align-items:center; }
+  .top-left { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+</style>
+</head>
+<body>
+<header>
+  <h1>SMK Negeri X — Kelas X TKJ 3 Industri</h1>
+  <div class="small">Aplikasi Absensi Sholat — Dzuhur & Ashar (tanpa absen nomor 11 & 32)</div>
+</header>
+
+<div class="card topbar">
+  <div class="top-left">
+    <div class="small">Tanggal: <strong id="todayText"></strong></div>
+    <div class="small">Waktu sekarang: <strong id="timeNow"></strong></div>
+  </div>
+
+  <div class="controls">
+    <button onclick="resetAll()" class="ghost">Reset Semua</button>
+    <button onclick="saveToLocal()" class="ghost">Simpan</button>
+    <button onclick="exportCSV()">📥 Export CSV</button>
+    <button onclick="window.print()">🖨️ Cetak</button>
+  </div>
+</div>
+
+<div class="layout">
+
+  <!-- Left: daftar & rekap harian -->
+  <div class="card">
+    <h3>Daftar Siswa (Aktif untuk Absensi)</h3>
+    <div style="overflow:auto; max-height:420px;">
+      <table id="tableSiswa">
+        <thead>
+          <tr>
+            <th style="width:36px">No</th>
+            <th>Nama / NISN</th>
+            <th style="width:120px">Dzuhur</th>
+            <th style="width:120px">Ashar</th>
+            <th style="width:160px">QR / Aksi</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <div class="tools" style="margin-top:10px;">
+      <div class="date-input small" style="align-items:center;">
+        <label class="small">Lihat rekap tanggal: </label>
+        <input type="date" id="rekapDate" />
+        <button onclick="showRekapHari()" class="ghost">Tampilkan</button>
+        <button onclick="clearRekapDate()" class="ghost">Hari Ini</button>
+      </div>
+    </div>
+
+    <div style="margin-top:10px;">
+      <h4 style="margin:6px 0">Rekap Hari Ini</h4>
+      <div id="rekapToday" class="rekap-list small">Dzuhur: 0 hadir | Ashar: 0 hadir</div>
+    </div>
+
+    <div class="note">Perubahan disimpan otomatis di browser (localStorage). QR bisa di-download atau dicetak tiap siswa.</div>
+  </div>
+
+  <!-- Right: scanner & log -->
+  <div class="card">
+    <h3>Scanner QR & Log</h3>
+
+    <div class="scanner-area" style="margin-bottom:8px;">
+      <div id="reader">Scanner belum aktif</div>
+
+      <div style="flex:1; min-width:200px;">
+        <div style="margin-bottom:8px;">
+          <label class="small">Mode Scan:</label>
+          <select id="scanMode">
+            <option value="dzuhur">Dzuhur</option>
+            <option value="ashar">Ashar</option>
+          </select>
+        </div>
+
+        <div style="display:flex; gap:8px; margin-bottom:8px; flex-wrap:wrap;">
+          <button onclick="startScanner()">▶︎ Mulai Scan</button>
+          <button onclick="stopScanner()" class="ghost">⏸️ Stop</button>
+          <button onclick="toggleCamera()" class="ghost">Ganti Kamera</button>
+        </div>
+
+        <div style="margin-top:8px;">
+          <h4>Ringkasan</h4>
+          <p id="rekapText" class="small">Dzuhur: 0 hadir | Ashar: 0 hadir</p>
+        </div>
+      </div>
+    </div>
+
+    <hr>
+
+    <div>
+      <h4>Detail Log (terakhir 50)</h4>
+      <div id="logArea" style="max-height:300px; overflow:auto; font-size:13px; padding:6px; border-radius:6px; background:#fbfff9;"></div>
+    </div>
+  </div>
+
+</div>
+
+<!-- QR modal -->
+<div id="qrModal" style="display:none; position:fixed; inset:0; background:rgba(3,7,18,0.5); align-items:center; justify-content:center;">
+  <div style="background:white; padding:16px; border-radius:12px; width:360px; max-width:92%;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+      <strong id="qrModalTitle">QR</strong>
+      <button onclick="closeQRModal()" class="ghost">Tutup</button>
+    </div>
+    <canvas id="qrCanvas" style="display:block; margin:0 auto;"></canvas>
+    <div style="margin-top:8px; display:flex; gap:8px; justify-content:flex-end;">
+      <button onclick="downloadQR()">Download QR</button>
+      <button onclick="printQR()" class="ghost">Print</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ================= DATA SISWA (34) - tanpa absen 11 & 32 =================
+   Nama dan NISN diambil dari daftar/foto. Nomor diurutkan 1..34
+*/
+const defaultStudents = [
+  {no:1, nama:"ADINDA AYU RAMADANI", nisn:"0105162254"},
+  {no:2, nama:"ADITIA RAFA AKHILAH", nisn:"0098665808"},
+  {no:3, nama:"ALDA ANIK TRI WULANDARI", nisn:"0092402064"},
+  {no:4, nama:"ALIF MIRZAB AS SHOFA", nisn:"0099133771"},
+  {no:5, nama:"AMELIA NUR FAZILA", nisn:"0096113509"},
+  {no:6, nama:"CLARISA PUTRI AULIA R", nisn:"0097526927"},
+  {no:7, nama:"DANANG AGSARIN", nisn:"0092565792"},
+  {no:8, nama:"DEVI AYU WULANDARI", nisn:"3092484328"},
+  {no:9, nama:"DIA SEPTYA UTAMI", nisn:"0096146383"},
+  {no:10, nama:"DNAR AULIA SHAVIRA", nisn:"0106233157"}, /* small typo preserved? original: DINAR */
+  {no:11, nama:"FIRMANSYAH", nisn:"3063937006"},
+  {no:12, nama:"INDAH MAYCELLAH", nisn:"0098238475"},
+  {no:13, nama:"ISMA GITA AULIA", nisn:"3091159285"},
+  {no:14, nama:"KARINA EKA NURAINI", nisn:"3090745297"},
+  {no:15, nama:"KEVIN REVANO", nisn:"0103310359"},
+  {no:16, nama:"M FAHRI KHUSEN", nisn:"3096092780"},
+  {no:17, nama:"M FAJAR HIDAYATULLOH", nisn:"3094918124"},
+  {no:18, nama:"M FIKI ADI PRATAMA", nisn:"0091399348"},
+  {no:19, nama:"M IHSAN ARDIANSYAH", nisn:"3090992168"},
+  {no:20, nama:"M RAIHAN KAUTSAR ADIRAFFA", nisn:"0091896199"},
+  {no:21, nama:"MAHARANI VIDYA NINGRUM", nisn:"0095881337"},
+  {no:22, nama:"MOCHAMAD BRILLIAN ANANTA SUZAN", nisn:"0096062976"},
+  {no:23, nama:"MOHAMAD RIDUWAN", nisn:"0108146227"},
+  {no:24, nama:"MOHAMMAD ALIF FAJAR", nisn:"0094702146"},
+  {no:25, nama:"MUHAMMAD FAISAL ABDILLAH", nisn:"0101571570"},
+  {no:26, nama:"NUR JAMILA PUTRI MARISKA", nisn:"0094423319"},
+  {no:27, nama:"REIHAN PUTRA MAHARDIKA", nisn:"0092159135"},
+  {no:28, nama:"REYHAN UBAIDILLAH NAJATA", nisn:"0092388573"},
+  {no:29, nama:"SAFAATUL NURAINI", nisn:"3092710827"},
+  {no:30, nama:"VERLITA AULIA PUTRI", nisn:"3105015233"},
+  {no:31, nama:"YOGI WAHYU PRATAMA", nisn:"0097842343"},
+  {no:32, nama:"ZAHRA NAZA AULIA", nisn:"3090604623"},
+  {no:33, nama:"ZAINATUL HIMARICA", nisn:"0108059794"},
+  {no:34, nama:"ZAKIATUZZAHROIL JANNAH", nisn:"3100096818"}
+];
+
+/* ========== state & storage ========== */
+const STORAGE_KEY = "absensi_sholat_x_tkj3_v2";
+let state = {
+  students: [],
+  logs: [] // {time, nama, nisn, jenis, date}
+};
+
+/* ========== util ========== */
+function pad(n){return n<10? '0'+n: n}
+function nowDate(){ const d = new Date(); return d.getFullYear() + "-" + pad(d.getMonth()+1) + "-" + pad(d.getDate()); }
+function timeNow(){ const d = new Date(); return pad(d.getHours()) + ":" + pad(d.getMinutes()) + ":" + pad(d.getSeconds()); }
+
+/* ========== init/load/save ========== */
+function loadState(){
+  const raw = localStorage.getItem(STORAGE_KEY);
+  if(raw){
+    try{
+      state = JSON.parse(raw);
+      if(!state.students || state.students.length === 0) setDefault();
+      if(!state.logs) state.logs = [];
+    }catch(e){
+      console.warn("parse err", e);
+      setDefault();
+    }
+  }else{
+    setDefault();
+  }
+}
+function setDefault(){
+  state.students = defaultStudents.map(s => ({...s, dzuhur:"Tidak Hadir", ashar:"Tidak Hadir"}));
+  state.logs = [];
+  saveToLocal();
+}
+function saveToLocal(){
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  renderTable();
+  renderRekap();
+}
+
+/* ========== render ========== */
+function renderTable(){
+  const tbody = document.querySelector("#tableSiswa tbody");
+  tbody.innerHTML = "";
+  state.students.forEach((s, idx) => {
+    const tr = document.createElement("tr");
+    const noCell = `<td>${s.no}</td>`;
+    const nameCell = `<td><strong>${s.nama}</strong><div class="small">${s.nisn}</div></td>`;
+    const dzSelect = `<select onchange="setStatus(${idx}, 'dzuhur', this.value)">
+                        <option value="Hadir" ${s.dzuhur==="Hadir"?"selected":""}>Hadir</option>
+                        <option value="Tidak Hadir" ${s.dzuhur==="Tidak Hadir"?"selected":""}>Tidak Hadir</option>
+                      </select>`;
+    const asSelect = `<select onchange="setStatus(${idx}, 'ashar', this.value)">
+                        <option value="Hadir" ${s.ashar==="Hadir"?"selected":""}>Hadir</option>
+                        <option value="Tidak Hadir" ${s.ashar==="Tidak Hadir"?"selected":""}>Tidak Hadir</option>
+                      </select>`;
+    const qrBtn = `<div style="display:flex; gap:6px; align-items:center;">
+        <button class="qr-btn" onclick="showQR(${idx})">Tampilkan QR</button>
+        <button class="qr-btn ghost" onclick="markPresentByIndex(${idx}, 'dzuhur')">Absen Dzuhur</button>
+        <button class="qr-btn ghost" onclick="markPresentByIndex(${idx}, 'ashar')">Absen Ashar</button>
+      </div>`;
+    tr.innerHTML = noCell + nameCell + `<td>${dzSelect}</td>` + `<td>${asSelect}</td>` + `<td>${qrBtn}</td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+/* ========== actions ========== */
+function setStatus(index, jenis, value){
+  state.students[index][jenis] = value;
+  addLog({time: new Date().toISOString(), date: nowDate(), nama: state.students[index].nama, nisn: state.students[index].nisn, jenis, note:"manual"});
+  saveToLocal();
+}
+
+function markPresentByIndex(index, jenis){
+  state.students[index][jenis] = "Hadir";
+  addLog({time: new Date().toISOString(), date: nowDate(), nama: state.students[index].nama, nisn: state.students[index].nisn, jenis, note:"manual-button"});
+  saveToLocal();
+}
+
+/* ========== rekap & log ========= */
+function renderRekap(){
+  const dz = state.students.filter(s => s.dzuhur === "Hadir").length;
+  const as = state.students.filter(s => s.ashar === "Hadir").length;
+  document.getElementById("rekapText").innerText = `Dzuhur: ${dz} hadir | Ashar: ${as} hadir`;
+
+  // rekap hari ini area
+  renderRekapForDate(nowDate(), document.getElementById("rekapToday"));
+
+  // log last 50
+  const area = document.getElementById("logArea");
+  area.innerHTML = "";
+  const last = state.logs.slice(-50).reverse();
+  last.forEach(l => {
+    const t = new Date(l.time);
+    const row = document.createElement("div");
+    row.style.padding = "6px 4px";
+    row.style.borderBottom = "1px dashed #eef9ef";
+    row.innerHTML = `<strong style="font-size:13px">${l.nama}</strong> <div class="small">${l.nisn} — ${t.toLocaleString()} — ${l.jenis} — ${l.note || ""}</div>`;
+    area.appendChild(row);
+  });
+}
+
+function renderRekapForDate(dateStr, targetElem){
+  // dateStr in YYYY-MM-DD
+  const logs = state.logs.filter(l => l.date === dateStr);
+  const hadirDz = logs.filter(l => l.jenis === "dzuhur").map(l => l.nama);
+  const hadirAs = logs.filter(l => l.jenis === "ashar").map(l => l.nama);
+
+  const uniqueDz = Array.from(new Set(hadirDz));
+  const uniqueAs = Array.from(new Set(hadirAs));
+  let html = `Dzuhur: ${uniqueDz.length} hadir<br>Ashar: ${uniqueAs.length} hadir<br><hr style="margin:6px 0">`;
+  html += `<div style="font-weight:600">Dzuhur:</div>`;
+  if(uniqueDz.length) html += `<div class="small">${uniqueDz.join("<br>")}</div>`; else html += `<div class="small">-</div>`;
+  html += `<div style="font-weight:600; margin-top:6px">Ashar:</div>`;
+  if(uniqueAs.length) html += `<div class="small">${uniqueAs.join("<br>")}</div>`; else html += `<div class="small">-</div>`;
+
+  targetElem.innerHTML = html;
+}
+
+/* Rekap hari tertentu */
+function showRekapHari(){
+  const d = document.getElementById("rekapDate").value;
+  if(!d) return alert("Pilih tanggal terlebih dahulu.");
+  renderRekapForDate(d, document.getElementById("rekapToday"));
+}
+function clearRekapDate(){
+  document.getElementById("rekapDate").value = "";
+  renderRekapForDate(nowDate(), document.getElementById("rekapToday"));
+}
+
+/* ========== logging ========= */
+function addLog(entry){
+  state.logs.push(entry);
+  if(state.logs.length > 2000) state.logs = state.logs.slice(-2000);
+}
+
+/* ========== CSV export ========= */
+function exportCSV(){
+  const header = ["No","Nama","NISN","Dzuhur","Ashar"];
+  const rows = state.students.map(s => [s.no, `"${s.nama}"`, s.nisn, s.dzuhur, s.ashar].join(","));
+  const csv = [header.join(","), ...rows].join("\n");
+  const blob = new Blob([csv], {type:"text/csv"});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `rekap_absensi_${nowDate()}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+/* ========== QR modal ========== */
+let currentQRIndex = null;
+function showQR(index){
+  const s = state.students[index];
+  currentQRIndex = index;
+  document.getElementById("qrModalTitle").innerText = `QR — ${s.nama}`;
+  const qrData = `${s.nama}|${s.nisn}`;
+  const canvas = document.getElementById("qrCanvas");
+  const qr = new QRious({
+    element: canvas,
+    value: qrData,
+    size: 320,
+    level: 'H'
+  });
+  document.getElementById("qrModal").style.display = "flex";
+}
+function closeQRModal(){ document.getElementById("qrModal").style.display = "none"; currentQRIndex = null; }
+function downloadQR(){
+  const canvas = document.getElementById("qrCanvas");
+  const url = canvas.toDataURL("image/png");
+  const a = document.createElement("a");
+  a.href = url;
+  const s = state.students[currentQRIndex];
+  a.download = `QR_${s.nama.replace(/\s+/g,'_')}.png`;
+  a.click();
+}
+function printQR(){
+  const canvas = document.getElementById("qrCanvas");
+  const dataUrl = canvas.toDataURL();
+  const w = window.open("");
+  w.document.write(`<img src="${dataUrl}">`);
+  w.print();
+  w.close();
+}
+
+/* ========== scanner (html5-qrcode) ========== */
+let html5QrcodeScanner = null;
+let currentCameraId = null;
+function startScanner(){
+  const scanMode = document.getElementById("scanMode").value;
+  if(html5QrcodeScanner) return;
+  html5QrcodeScanner = new Html5Qrcode(/* element id */ "reader", /* verbose= */ false);
+  Html5Qrcode.getCameras().then(cameras => {
+    if(!cameras || cameras.length === 0){
+      alert("Tidak menemukan kamera pada perangkat.");
+      return;
+    }
+    // pilih kamera terakhir digunakan atau camera[0]
+    const chosen = currentCameraId ? cameras.find(c=>c.id===currentCameraId) : cameras[0];
+    const cameraId = chosen ? chosen.id : cameras[0].id;
+    currentCameraId = cameraId;
+    html5QrcodeScanner.start(
+      cameraId,
+      { fps: 10, qrbox: 250 },
+      qrCodeMessage => { processScannedQR(qrCodeMessage, scanMode); },
+      errorMessage => { /* ignore */ }
+    ).catch(err => {
+      console.error("start failed", err);
+      alert("Gagal memulai scanner: " + err);
+    });
+  }).catch(err => {
+    console.error(err);
+    alert("Akses kamera diperlukan untuk scan QR. Pastikan izin diberikan.");
+  });
+}
+
+function stopScanner(){
+  if(html5QrcodeScanner){
+    html5QrcodeScanner.stop().then(() => {
+      html5QrcodeScanner.clear();
+      html5QrcodeScanner = null;
+      document.getElementById("reader").innerHTML = "Scanner berhenti";
+    }).catch(e => console.warn(e));
+  }
+}
+function toggleCamera(){
+  // stop then try to pick next camera
+  Html5Qrcode.getCameras().then(cameras => {
+    if(!cameras || cameras.length < 2) return alert("Tidak ada kamera lain untuk dipilih.");
+    let idx = cameras.findIndex(c => c.id === currentCameraId);
+    idx = (idx + 1) % cameras.length;
+    currentCameraId = cameras[idx].id;
+    stopScanner();
+    setTimeout(startScanner, 400);
+  }).catch(e => console.warn(e));
+}
+
+function processScannedQR(text, scanMode){
+  const parts = (text||"").split("|");
+  const nama = (parts[0]||"").trim();
+  const nisn = (parts[1]||"").trim();
+  if(!nama){
+    addLog({time:new Date().toISOString(), date: nowDate(), nama:"(invalid)", nisn:"", jenis:scanMode, note:"invalid-qr"});
+    saveToLocal();
+    return;
+  }
+  // cari siswa berdasarkan nisn atau nama
+  let idx = state.students.findIndex(s => (s.nisn && s.nisn===nisn) || (s.nama && s.nama.toLowerCase()===nama.toLowerCase()));
+  if(idx === -1){
+    addLog({time:new Date().toISOString(), date: nowDate(), nama, nisn, jenis:scanMode, note:"not-found"});
+    saveToLocal();
+    alert("Siswa tidak ditemukan di daftar aktif: " + nama + ". (Hubungi admin jika perlu ditambahkan.)");
+    return;
+  }
+  // tandai hadir
+  state.students[idx][scanMode] = "Hadir";
+  addLog({time:new Date().toISOString(), date: nowDate(), nama: state.students[idx].nama, nisn: state.students[idx].nisn, jenis: scanMode, note:"scan"});
+  saveToLocal();
+}
+
+/* ========== init page ========== */
+function initPage(){
+  loadState();
+  // ensure fields exist
+  state.students = state.students.map(s => ({dzuhur: "Tidak Hadir", ashar:"Tidak Hadir", ...s}));
+  saveToLocal();
+  renderTable();
+  renderRekap();
+  document.getElementById("todayText").innerText = nowDate();
+  document.getElementById("timeNow").innerText = timeNow();
+  setInterval(()=>{ document.getElementById("timeNow").innerText = timeNow(); }, 1000);
+  document.getElementById("rekapDate").value = "";
+}
+
+initPage
+
+/* Save on unload */
+window.addEventListener("beforeunload", () => saveToLocal());
+</script>
+</body>
+</html>
